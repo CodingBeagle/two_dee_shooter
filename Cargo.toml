@@ -1,0 +1,9 @@
+# Workspaces are a Cargo feature that can help you manage multiple related packages that are developed in tandem.
+# In this case, I use it to split the binary (the game, the application...) from the crates I have which offers bindings to various
+# C libraries, such as GLFW.
+[workspace]
+
+members = [
+    "two_dee_shooter",
+    "beagle_glfw"
+]
