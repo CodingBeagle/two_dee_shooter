@@ -37,6 +37,10 @@ fn main() {
         while glfwWindowShouldClose(main_window) == 0 {
             glfwPollEvents();
         }
+
+        // Before terminating your application, you should terminate the GLFW library if it has been initialized.
+        // If you don't global system settings changed by GLFW might not be restored properly.
+        glfwTerminate();
     }
 }
 
