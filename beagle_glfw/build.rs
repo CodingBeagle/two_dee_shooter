@@ -29,6 +29,8 @@ fn main() {
         .header("wrapper.h")
         // With the F argument, I add the directory to search for header files for GLFW
         .clang_arg("-FD:/libraries/glfw337")
+        // I also include a place to search for the Vulkan headers, which is required for GLFW
+        .clang_arg("-FD:/VulkanSDK/1.3.224.1/Include")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
         .expect("Unable to generate bindings.");
