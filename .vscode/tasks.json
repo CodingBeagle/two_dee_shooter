@@ -1,0 +1,22 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Project",
+            "type": "shell",
+            "command": ".\\scripts\\build.ps1 -project_root_directory ${workspaceFolder}",
+            // A task belonding to the 'build' group with the 'isDefault' attribute can be invoked using the shortcut
+            // ctrl + shift + B
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                // Only show if warnings or errors are scanned
+                "reveal": "silent",
+            }
+        }
+    ]
+}

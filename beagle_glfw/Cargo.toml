@@ -5,4 +5,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+# build-dependencies are used for dependencies needed during the build process, for build scripts (build.rs).
+[build-dependencies]
+bindgen = "0.53.1"
