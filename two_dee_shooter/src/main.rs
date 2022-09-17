@@ -46,6 +46,23 @@ fn main() {
         let mut glfw_extension_count: u32 = 0;
         let glfw_extensions = glfwGetRequiredInstanceExtensions(&mut glfw_extension_count);
 
+        // For debug builds, I'll enable standard validation layers that comes bundled with the LunarG Vulkan SDK.
+        // These standard validations comes bundled into a layer in the SDK called "VK_LAYER_KHRONOS_validation".
+        let required_validation_layers = vec!(
+            "VK_LAYER_KHRONOS_validation"
+        );
+
+        // Retrieve all available layers.
+        // TODO: Probably I could transform available_layers to a list of strings to quickly compare against my required validation layers
+        let available_layers = entry.enumerate_instance_layer_properties().expect("Failed to retrieve available layers.");
+
+        for required_validation_layer in required_validation_layers {
+            for available_layer in &available_layers {
+                let layer_name = CStr::from_ptr(available_layer.layer_name.as_ptr());
+                println!("{}", layer_name.to_str().unwrap());
+            }
+        }
+
         let create_info = vk::InstanceCreateInfo {
             s_type: vk::StructureType::INSTANCE_CREATE_INFO,
             p_application_info: &application_info,
