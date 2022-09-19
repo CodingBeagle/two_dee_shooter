@@ -30,11 +30,14 @@ fn main() {
             The "ApplicationInfo" struct is technically optional, but giving the information may help the driver optimize some things for
             our application.
         */
+        let application_name = ffi_string("2D Shooter");
+        let engine_name = ffi_string("No Engine");
+
         let application_info = vk::ApplicationInfo {
             s_type: vk::StructureType::APPLICATION_INFO,
-            p_application_name: ffi_string("2D Shooter").as_ptr(),
+            p_application_name: application_name.as_ptr(),
             application_version: vk::make_api_version(1, 0, 0, 0),
-            p_engine_name: ffi_string("No Engine").as_ptr(),
+            p_engine_name: engine_name.as_ptr(),
             engine_version: vk::make_api_version(1, 0, 0, 0),
             api_version: vk::API_VERSION_1_0,
             ..Default::default()
@@ -56,19 +59,42 @@ fn main() {
         // TODO: Probably I could transform available_layers to a list of strings to quickly compare against my required validation layers
         let available_layers = entry.enumerate_instance_layer_properties().expect("Failed to retrieve available layers.");
 
-        for required_validation_layer in required_validation_layers {
+        for required_validation_layer in &required_validation_layers {
+            let mut is_required_validation_layer_supported = false;
+
             for available_layer in &available_layers {
-                let layer_name = CStr::from_ptr(available_layer.layer_name.as_ptr());
-                println!("{}", layer_name.to_str().unwrap());
+                // TODO: Is this an owned string that is being converted to??
+                let layer_name = CStr::from_ptr(available_layer.layer_name.as_ptr()).to_str().expect("Failed to get string from available layer.");
+                if layer_name == (*required_validation_layer) {
+                    is_required_validation_layer_supported = true;
+                }
+            }
+
+            if !is_required_validation_layer_supported {
+                panic!("The required validation layer {} could not be found in the list of available layers.", required_validation_layer);
             }
         }
+
+        let haha_lel : Vec<CString> = required_validation_layers
+        .iter()
+        .map(|layer_name| {
+            CString::new(*layer_name).unwrap()
+        })
+        .collect();
+
+        let dayum = haha_lel
+        .iter()
+        .map(|x| x.as_ptr())
+        .collect::<Vec<*const i8>>()
+        .as_ptr();
 
         let create_info = vk::InstanceCreateInfo {
             s_type: vk::StructureType::INSTANCE_CREATE_INFO,
             p_application_info: &application_info,
             enabled_extension_count: glfw_extension_count,
             pp_enabled_extension_names: glfw_extensions,
-            enabled_layer_count: 0,
+            enabled_layer_count: required_validation_layers.len() as u32,
+            pp_enabled_layer_names: dayum,
             ..Default::default()
         };
 
