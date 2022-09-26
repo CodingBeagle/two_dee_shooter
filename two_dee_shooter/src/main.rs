@@ -75,26 +75,25 @@ fn main() {
             }
         }
 
-        let haha_lel : Vec<CString> = required_validation_layers
+        let validation_layers_as_cstrings : Vec<CString> = required_validation_layers
         .iter()
         .map(|layer_name| {
             CString::new(*layer_name).unwrap()
         })
         .collect();
 
-        let dayum = haha_lel
+        let validation_layers_as_raw_pointers: Vec<*const i8> = validation_layers_as_cstrings
         .iter()
         .map(|x| x.as_ptr())
-        .collect::<Vec<*const i8>>()
-        .as_ptr();
+        .collect();
 
         let create_info = vk::InstanceCreateInfo {
             s_type: vk::StructureType::INSTANCE_CREATE_INFO,
             p_application_info: &application_info,
             enabled_extension_count: glfw_extension_count,
             pp_enabled_extension_names: glfw_extensions,
+            pp_enabled_layer_names: validation_layers_as_raw_pointers.as_ptr(),
             enabled_layer_count: required_validation_layers.len() as u32,
-            pp_enabled_layer_names: dayum,
             ..Default::default()
         };
 
