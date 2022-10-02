@@ -24,7 +24,7 @@ fn main() {
             In order to initialize Vulkan, we need to create an instance.
             The instance is a connection between your application and the Vulkan library.
 
-            To create an instance, you first hav eto fill out a struct with information about the application.
+            To create an instance, you first have to fill out a struct with information about the application.
             A lot of information in Vulkan will be passed through structs instead of function parameters.
 
             The "ApplicationInfo" struct is technically optional, but giving the information may help the driver optimize some things for
@@ -46,8 +46,7 @@ fn main() {
         // vkInstanceCreateInfo is a required struct which tells the Vulkan driver which global extensions and validation layers we want to use.
         // Global meaning: They apply to the entire program and not a specific device.
         // We also specify our application info struct in this struct.
-        let mut glfw_extension_count: u32 = 0;
-        let glfw_extensions = glfwGetRequiredInstanceExtensions(&mut glfw_extension_count);
+        let required_extensions = build_extensions();
 
         // For debug builds, I'll enable standard validation layers that comes bundled with the LunarG Vulkan SDK.
         // These standard validations comes bundled into a layer in the SDK called "VK_LAYER_KHRONOS_validation".
@@ -76,22 +75,31 @@ fn main() {
         }
 
         let validation_layers_as_cstrings : Vec<CString> = required_validation_layers
-        .iter()
-        .map(|layer_name| {
-            CString::new(*layer_name).unwrap()
-        })
-        .collect();
+            .iter()
+            .map(|layer_name| {
+                CString::new(*layer_name).unwrap()
+            })
+            .collect();
 
         let validation_layers_as_raw_pointers: Vec<*const i8> = validation_layers_as_cstrings
-        .iter()
-        .map(|x| x.as_ptr())
-        .collect();
+            .iter()
+            .map(|x| x.as_ptr())
+            .collect();
+
+        let required_extensions_as_c_string: Vec<CString> = required_extensions.iter()
+            .map(|x| CString::new(x.clone()).expect("Failed to create CString from string"))
+            .collect();
+
+        let required_extensions_pointer: Vec<*const i8> = required_extensions_as_c_string
+            .iter()
+            .map(|x| x.as_ptr())
+            .collect();
 
         let create_info = vk::InstanceCreateInfo {
             s_type: vk::StructureType::INSTANCE_CREATE_INFO,
             p_application_info: &application_info,
-            enabled_extension_count: glfw_extension_count,
-            pp_enabled_extension_names: glfw_extensions,
+            enabled_extension_count: required_extensions_pointer.len() as u32,
+            pp_enabled_extension_names: required_extensions_pointer.as_ptr(),
             pp_enabled_layer_names: validation_layers_as_raw_pointers.as_ptr(),
             enabled_layer_count: required_validation_layers.len() as u32,
             ..Default::default()
@@ -135,6 +143,26 @@ fn main() {
         // If you don't global system settings changed by GLFW might not be restored properly.
         glfwTerminate();
     }
+}
+
+unsafe fn build_extensions() -> Vec<String> {
+    let mut required_extensions: Vec<String> = vec!();
+
+    // Get required GLFW extensions
+    let mut glfw_extension_count: u32 = 0;
+    let mut glfw_extensions = glfwGetRequiredInstanceExtensions(&mut glfw_extension_count);
+
+    for n in 1..=glfw_extension_count {
+        let current_string = *glfw_extensions;
+        required_extensions.push(
+            String::from_utf8_lossy(CStr::from_ptr(current_string).to_bytes()).to_string());
+        glfw_extensions = glfw_extensions.offset(n as isize);
+    }
+
+    // VK_EXT_debug_utils is a required extension when setting up callback functionality
+    required_extensions.push(String::from("VK_EXT_debug_utils"));
+
+    required_extensions
 }
 
 /*
