@@ -160,6 +160,7 @@ fn main() {
         // After creating a Vulkan instance, we need to select a physical graphics card that supports the features we need.
         let physical_devices = vk_instance.enumerate_physical_devices().expect("Failed to retrieve physical devices.");
 
+        // TODO: Do something nice here, like printing a list of all available physical devices.
         let mut selected_physical_device: Option<vk::PhysicalDevice> = None;
         for physical_device in physical_devices {
             if is_device_suitable(&vk_instance, physical_device) {
@@ -220,7 +221,13 @@ unsafe fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevic
     println!("Checking physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
 
     // Currently, I just select any physical GPU that supports geometry shaders.
-    return device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0
+    let selection_criteria = device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0;
+
+    if selection_criteria {
+        println!("Selected physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
+    }
+
+    selection_criteria
 }
 
 unsafe fn build_extensions() -> Vec<String> {
