@@ -146,6 +146,8 @@ fn main() {
 
         // Now everything is specified for Vulkan to create an instance
         // This instance should live for as long as the application lives.
+        // Creating a VkInstance object initializes the Vulkan library.
+        // Per-application state is stored in this object. Vulkan does NOT have any global state.
         let vk_instance = entry.create_instance(&create_info, None).expect("Failed to create Vulkan instance.");
 
         // In order to create a debug messenger, we have to call the function "vkCreateDebugUtilsMessengerEXT"
