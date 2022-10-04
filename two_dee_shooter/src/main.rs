@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::ffi::{ CString, CStr, c_void };
 use std::ptr;
 use std::os::raw::c_char;
@@ -156,6 +157,20 @@ fn main() {
         let debug_utils_loader = ash::extensions::ext::DebugUtils::new(&entry, &vk_instance);
         let debug_utils_messenger = setup_debug_messenger(&debug_utils_loader);
 
+        // After creating a Vulkan instance, we need to select a physical graphics card that supports the features we need.
+        let physical_devices = vk_instance.enumerate_physical_devices().expect("Failed to retrieve physical devices.");
+
+        let mut selected_physical_device: Option<vk::PhysicalDevice> = None;
+        for physical_device in physical_devices {
+            if is_device_suitable(&vk_instance, physical_device) {
+                selected_physical_device = Some(physical_device);
+            }
+        }
+
+        if selected_physical_device.is_none() {
+            panic!("Failed to select a physical device!");
+        }
+
         // GLFW was originally designed to create an OpenGL context, so we have to tell it not to
         // since we'll be using Vulkan.
         glfwWindowHint(GLFW_CLIENT_API as i32, GLFW_NO_API as i32);
@@ -195,6 +210,17 @@ fn main() {
         // If you don't global system settings changed by GLFW might not be restored properly.
         glfwTerminate();
     }
+}
+
+unsafe fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
+    let device_properties = instance.get_physical_device_properties(device);
+    let device_features = instance.get_physical_device_features(device);
+
+    let device_name = CStr::from_ptr(device_properties.device_name.as_ptr());
+    println!("Checking physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
+
+    // Currently, I just select any physical GPU that supports geometry shaders.
+    return device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0
 }
 
 unsafe fn build_extensions() -> Vec<String> {
