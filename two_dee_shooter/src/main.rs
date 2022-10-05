@@ -212,11 +212,14 @@ fn main() {
             ..Default::default()
         };
 
-        let vk_device = vk_instance.create_device(selected_physical_device.unwrap(), &logical_device_create_info, None);
+        let vk_device = 
+            match vk_instance.create_device(selected_physical_device.unwrap(), &logical_device_create_info, None) {
+                Ok(physical_device) => physical_device,
+                Err(err) => panic!("Failed to create physical device! :(")
+            };
 
-        if vk_device.is_err() {
-            panic!("Failed to create a logical device! :(");
-        }
+        // We a logical device created
+        let device_queue = vk_device.get_device_queue(indices.graphics_family.unwrap(), 0);
 
         // GLFW was originally designed to create an OpenGL context, so we have to tell it not to
         // since we'll be using Vulkan.
@@ -244,7 +247,7 @@ fn main() {
         }
 
         // Delete the logical device
-        vk_device.unwrap().destroy_device(None);
+        vk_device.destroy_device(None);
 
         // Clean up the debug messenger
         // Destroying the debug messenger must be done before the Vulkan instance is destroyed.
