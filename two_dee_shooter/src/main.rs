@@ -172,6 +172,52 @@ fn main() {
             panic!("Failed to select a physical device!");
         }
 
+        // Time to create a logical device from our physical device!
+        // In order to create a logical device, I need to supply information on queues I want to have created, as well as
+        // Device features I want to use.
+        let indices = find_queue_families(&vk_instance, selected_physical_device.unwrap());
+
+        // First I create a DeviceQueueCreateInfo struct, which is used to specify the number of queues we want for a single queue family.
+
+        // Vulkan requires that you assign priorities to queues, in order to influence the scheduling of command buffer execution.
+        // The priority is specified using a floating point number between 0.0 and 1.0.
+        // TODO: Read up more on this scheduling mechanism
+        let queue_priority: f32 = 1.0;
+
+        let queue_create_info = vk::DeviceQueueCreateInfo {
+            s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
+            queue_family_index: indices.graphics_family.unwrap(),
+            queue_count: 1,
+            p_queue_priorities: &queue_priority,
+            ..Default::default()
+        };
+
+        // We also need to supply information about device features we want.
+        // Right now, I don't need anything in particular, so I'll leave the struct with default values.
+        let device_features = vk::PhysicalDeviceFeatures {
+            ..Default::default()
+        };
+
+        // Now I create the logical device
+        let logical_device_create_info = vk::DeviceCreateInfo {
+            s_type: vk::StructureType::DEVICE_CREATE_INFO,
+            p_queue_create_infos: &queue_create_info,
+            queue_create_info_count: 1,
+            p_enabled_features: &device_features,
+            // Previous implementations of Vulkan made a distinction between instance and device specific validation layers,
+            // but this is no longer the case. "enabled_layer_count" and "pp_enabled_layer_names" are ignored by up-to-date implementations.
+            // However, it's a good idea to set the anyways to be compatible with older implementations.
+            enabled_layer_count: required_validation_layers.len() as u32,
+            pp_enabled_layer_names: validation_layers_as_raw_pointers.as_ptr(),
+            ..Default::default()
+        };
+
+        let vk_device = vk_instance.create_device(selected_physical_device.unwrap(), &logical_device_create_info, None);
+
+        if vk_device.is_err() {
+            panic!("Failed to create a logical device! :(");
+        }
+
         // GLFW was originally designed to create an OpenGL context, so we have to tell it not to
         // since we'll be using Vulkan.
         glfwWindowHint(GLFW_CLIENT_API as i32, GLFW_NO_API as i32);
@@ -197,6 +243,9 @@ fn main() {
             glfwPollEvents();
         }
 
+        // Delete the logical device
+        vk_device.unwrap().destroy_device(None);
+
         // Clean up the debug messenger
         // Destroying the debug messenger must be done before the Vulkan instance is destroyed.
         // TODO: Does Ash handle any of these calls in Drop implementations of the structs??
@@ -213,6 +262,43 @@ fn main() {
     }
 }
 
+#[derive(Default)]
+struct QueueFamilyIndices {
+    graphics_family: Option<u32>
+}
+
+impl QueueFamilyIndices {
+    pub fn is_complete(&self) -> bool {
+        self.graphics_family.is_some()
+    }
+}
+
+unsafe fn find_queue_families(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> QueueFamilyIndices {
+    let mut indices = QueueFamilyIndices::default();
+
+    // Retrieve a list of queue families for a physical device
+    // QueueFamiliyProperties contains details about the queue family, including the type of operations that are
+    // Supported and the number of queues that can be created based on that family.
+    // Right now, we need to find a queue that supports VK_QUEUE_GRAPHICS_BIT
+    let queue_families = instance.get_physical_device_queue_family_properties(physical_device);
+
+    let mut current_family_index: u32 = 0;
+    for queue_family in queue_families {
+        if queue_family.queue_flags & vk::QueueFlags::GRAPHICS == vk::QueueFlags::GRAPHICS {
+            println!("Detected queue family supporting GRAPHICS");
+            indices.graphics_family = Some(current_family_index);
+        }
+
+        if indices.is_complete() {
+            break;
+        }
+
+        current_family_index += 1;
+    }
+
+    indices
+}
+
 unsafe fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
     let device_properties = instance.get_physical_device_properties(device);
     let device_features = instance.get_physical_device_features(device);
@@ -221,7 +307,8 @@ unsafe fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevic
     println!("Checking physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
 
     // Currently, I just select any physical GPU that supports geometry shaders.
-    let selection_criteria = device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0;
+    let selection_criteria = 
+        (device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0) && (find_queue_families(instance, device).is_complete());
 
     if selection_criteria {
         println!("Selected physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
