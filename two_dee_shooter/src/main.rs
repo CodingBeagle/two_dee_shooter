@@ -3,6 +3,7 @@ use std::ffi::{ CString, CStr, c_void };
 use std::ptr;
 use std::os::raw::c_char;
 
+use ash::vk::Handle;
 use ash::{vk, Entry};
 
 use beagle_glfw::*;
@@ -149,7 +150,7 @@ fn main() {
         // This instance should live for as long as the application lives.
         // Creating a VkInstance object initializes the Vulkan library.
         // Per-application state is stored in this object. Vulkan does NOT have any global state.
-        let vk_instance = entry.create_instance(&create_info, None).expect("Failed to create Vulkan instance.");
+        let mut vk_instance = entry.create_instance(&create_info, None).expect("Failed to create Vulkan instance.");
 
         // In order to create a debug messenger, we have to call the function "vkCreateDebugUtilsMessengerEXT"
         // Since this is an extension function, it is not automatically loaded with Vulkan.
@@ -159,6 +160,49 @@ fn main() {
 
         // After creating a Vulkan instance, we need to select a physical graphics card that supports the features we need.
         let physical_devices = vk_instance.enumerate_physical_devices().expect("Failed to retrieve physical devices.");
+
+        // GLFW was originally designed to create an OpenGL context, so we have to tell it not to
+        // since we'll be using Vulkan.
+        glfwWindowHint(GLFW_CLIENT_API as i32, GLFW_NO_API as i32);
+
+        // Handling resized windows takes special care.
+        // Disabled for now.
+        glfwWindowHint(GLFW_RESIZABLE as i32, GLFW_FALSE as i32);
+
+        let window_title = ffi_string("Two Dee Shooter");
+        let mut main_window = glfwCreateWindow(
+            WIDTH,
+            HEIGHT,
+            window_title.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut());       
+
+        // If main_window is NULL, window creation failed for some reason.
+        if main_window.is_null() {
+            panic!("Failed to create window: {}", get_latest_glfw_error_description());
+        }
+
+        // In order to present visuals to the window, we need to create a VkSurfaceKHR object.
+        // This object represents an abstract type of surface to present rendered images to.
+        // While the object and its usage is platform agnostic, the creation isn't.
+        // The creation depends on window system details, like a HWND and HMODULE.
+        // There is a platform-specific addition to "VK_KHR_SURFACE" called "VK_KHR_win32_surface" that handles this.
+        let surface_extension = ash::extensions::khr::Surface::new(&entry, &vk_instance);
+
+        let mut some_surface: u64 = 0;
+
+        // TODO: I manually edited the bindings.rs file to simply have u64 handles for parameters. The bindgen generation is bonkers.
+        // I'll have to figure out how to make that generation automatic, by modifying the types through the bindgen builder.
+        // Perhaps I should also raise an issue on bindgen github?
+        let result = glfwCreateWindowSurface(vk_instance.handle().as_raw(), main_window, ptr::null(), &mut some_surface);
+
+        if result != 0 {
+            panic!("Failed to create Window Surface!");
+        }
+
+        let the_surface = vk::SurfaceKHR::from_raw(some_surface);        
+
+        
 
         // TODO: Do something nice here, like printing a list of all available physical devices.
         let mut selected_physical_device: Option<vk::PhysicalDevice> = None;
@@ -218,29 +262,8 @@ fn main() {
                 Err(err) => panic!("Failed to create physical device! :(")
             };
 
-        // We a logical device created
+        // Now that we have a logical device, we can retrieve the queue we need.
         let device_queue = vk_device.get_device_queue(indices.graphics_family.unwrap(), 0);
-
-        // GLFW was originally designed to create an OpenGL context, so we have to tell it not to
-        // since we'll be using Vulkan.
-        glfwWindowHint(GLFW_CLIENT_API as i32, GLFW_NO_API as i32);
-
-        // Handling resized windows takes special care.
-        // Disabled for now.
-        glfwWindowHint(GLFW_RESIZABLE as i32, GLFW_FALSE as i32);
-
-        let window_title = ffi_string("Two Dee Shooter");
-        let mut main_window = glfwCreateWindow(
-            WIDTH,
-            HEIGHT,
-            window_title.as_ptr(),
-            ptr::null_mut(),
-            ptr::null_mut());       
-
-        // If main_window is NULL, window creation failed for some reason.
-        if main_window.is_null() {
-            panic!("Failed to create window: {}", get_latest_glfw_error_description());
-        }
 
         while glfwWindowShouldClose(main_window) == 0 {
             glfwPollEvents();
@@ -253,6 +276,9 @@ fn main() {
         // Destroying the debug messenger must be done before the Vulkan instance is destroyed.
         // TODO: Does Ash handle any of these calls in Drop implementations of the structs??
         debug_utils_loader.destroy_debug_utils_messenger(debug_utils_messenger, None);
+
+        // We destroy the KHR Surfance
+        surface_extension.destroy_surface(the_surface, None);
 
         // Before we terminate the application, we destroy the Vulkan instance.
         vk_instance.destroy_instance(None);
@@ -324,6 +350,9 @@ unsafe fn build_extensions() -> Vec<String> {
     let mut required_extensions: Vec<String> = vec!();
 
     // Get required GLFW extensions
+    // GLFW will include VK_KHR_Surface. This is the Window System Integration (WSI) extension. It can be used
+    // To establish a connection between Vulkan and the window system.
+    // Vulkan is a platform agnostic API, so the core specification has no knowledge of concrete windowing systems.
     let mut glfw_extension_count: u32 = 0;
     let mut glfw_extensions = glfwGetRequiredInstanceExtensions(&mut glfw_extension_count);
 

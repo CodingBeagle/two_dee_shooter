@@ -25,6 +25,7 @@ fn main() {
         // I'm currently using the dynamic library (.dll) for GLFW
         // When using that, it is required to define the GLFW_DLL macro, to tell the compiler that the GLFW functions are defined in a DLL.
         .clang_arg("-D GLFW_DLL")
+        .clang_arg("-D GLFW_INCLUDE_VULKAN")
         // The wrapper header contains the header files from GLFW that the generated bindings should be based upon.
         .header("wrapper.h")
         // With the F argument, I add the directory to search for header files for GLFW
