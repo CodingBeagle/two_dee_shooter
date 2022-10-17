@@ -359,13 +359,32 @@ unsafe fn is_device_suitable(instance: &ash::Instance, surface: vk::SurfaceKHR, 
     // Currently, I just select any physical GPU that supports geometry shaders.
     let selection_criteria = 
         (device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0) 
-        && (find_queue_families(instance, surface, khr_extension, device).is_complete());
+        && (find_queue_families(instance, surface, khr_extension, device).is_complete())
+        && check_device_extension_support(instance, device);
 
     if selection_criteria {
         println!("Selected physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
     }
 
     selection_criteria
+}
+
+unsafe fn check_device_extension_support(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+    // Not all graphics cards are capable of presenting images directly to a screen.
+    // In order to get support for presenting images to the screen, we need to enable the VK_KHR_swapchain extension.
+    // This extension indicates whether the device is capable of creating a swapchain.
+    // So, we need to query our device for support for this extension.
+    let available_device_extensions = instance.enumerate_device_extension_properties(physical_device).unwrap();
+
+    let mut required_extensions: HashSet<String> = HashSet::new();
+    required_extensions.insert(String::from("VK_KHR_swapchain"));
+
+    for available_extension in available_device_extensions {
+        let extension_name = CStr::from_ptr(available_extension.extension_name.as_ptr()).to_str().unwrap();
+        required_extensions.remove(extension_name);
+    }
+
+    required_extensions.is_empty()
 }
 
 unsafe fn build_extensions() -> Vec<String> {
