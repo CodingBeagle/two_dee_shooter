@@ -1,9 +1,10 @@
 use std::borrow::Borrow;
+use std::collections::HashSet;
 use std::ffi::{ CString, CStr, c_void };
 use std::ptr;
 use std::os::raw::c_char;
 
-use ash::vk::Handle;
+use ash::vk::{Handle, DeviceQueueCreateFlags};
 use ash::{vk, Entry};
 
 use beagle_glfw::*;
@@ -202,12 +203,10 @@ fn main() {
 
         let the_surface = vk::SurfaceKHR::from_raw(some_surface);        
 
-        
-
         // TODO: Do something nice here, like printing a list of all available physical devices.
         let mut selected_physical_device: Option<vk::PhysicalDevice> = None;
         for physical_device in physical_devices {
-            if is_device_suitable(&vk_instance, physical_device) {
+            if is_device_suitable(&vk_instance, the_surface, &surface_extension, physical_device) {
                 selected_physical_device = Some(physical_device);
             }
         }
@@ -217,24 +216,36 @@ fn main() {
         }
 
         // Time to create a logical device from our physical device!
+
         // In order to create a logical device, I need to supply information on queues I want to have created, as well as
         // Device features I want to use.
-        let indices = find_queue_families(&vk_instance, selected_physical_device.unwrap());
+        let indices = find_queue_families(&vk_instance, the_surface, &surface_extension, selected_physical_device.unwrap());
 
-        // First I create a DeviceQueueCreateInfo struct, which is used to specify the number of queues we want for a single queue family.
+        let mut family_indices: HashSet<u32> = HashSet::new();
+        family_indices.insert(indices.graphics_family.unwrap());
+        family_indices.insert(indices.present_family.unwrap());
+
+        // I run through each family index that I need to create a queue for, and create its DeviceQueueCreateInfo struct.
+        // The list of these DeviceQueueCreateInfo structs will be passed to DeviceCreateInfo struct, when creating the logical device and its
+        // required queues.
+        let mut queues_to_create: Vec<vk::DeviceQueueCreateInfo> = vec!();
 
         // Vulkan requires that you assign priorities to queues, in order to influence the scheduling of command buffer execution.
         // The priority is specified using a floating point number between 0.0 and 1.0.
         // TODO: Read up more on this scheduling mechanism
         let queue_priority: f32 = 1.0;
 
-        let queue_create_info = vk::DeviceQueueCreateInfo {
-            s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
-            queue_family_index: indices.graphics_family.unwrap(),
-            queue_count: 1,
-            p_queue_priorities: &queue_priority,
-            ..Default::default()
-        };
+        for family_index in family_indices {
+            let queue_create_info = vk::DeviceQueueCreateInfo {
+                s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
+                queue_family_index: family_index,
+                queue_count: 1,
+                p_queue_priorities: &queue_priority,
+                ..Default::default()
+            };
+
+            queues_to_create.push(queue_create_info);
+        }
 
         // We also need to supply information about device features we want.
         // Right now, I don't need anything in particular, so I'll leave the struct with default values.
@@ -243,10 +254,11 @@ fn main() {
         };
 
         // Now I create the logical device
+        // Qeues will be created automatically with the logical device.
         let logical_device_create_info = vk::DeviceCreateInfo {
             s_type: vk::StructureType::DEVICE_CREATE_INFO,
-            p_queue_create_infos: &queue_create_info,
-            queue_create_info_count: 1,
+            p_queue_create_infos: queues_to_create.as_ptr(),
+            queue_create_info_count: queues_to_create.len() as u32,
             p_enabled_features: &device_features,
             // Previous implementations of Vulkan made a distinction between instance and device specific validation layers,
             // but this is no longer the case. "enabled_layer_count" and "pp_enabled_layer_names" are ignored by up-to-date implementations.
@@ -263,7 +275,8 @@ fn main() {
             };
 
         // Now that we have a logical device, we can retrieve the queue we need.
-        let device_queue = vk_device.get_device_queue(indices.graphics_family.unwrap(), 0);
+        // Right now, we need the queue that supports presentation.
+        let device_presentation_queue = vk_device.get_device_queue(indices.present_family.unwrap(), 0);
 
         while glfwWindowShouldClose(main_window) == 0 {
             glfwPollEvents();
@@ -293,16 +306,17 @@ fn main() {
 
 #[derive(Default)]
 struct QueueFamilyIndices {
-    graphics_family: Option<u32>
+    graphics_family: Option<u32>,
+    present_family: Option<u32>
 }
 
 impl QueueFamilyIndices {
     pub fn is_complete(&self) -> bool {
-        self.graphics_family.is_some()
+        self.graphics_family.is_some() && self.present_family.is_some()
     }
 }
 
-unsafe fn find_queue_families(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> QueueFamilyIndices {
+unsafe fn find_queue_families(instance: &ash::Instance, surface: vk::SurfaceKHR, khr_extension: &ash::extensions::khr::Surface, physical_device: vk::PhysicalDevice) -> QueueFamilyIndices {
     let mut indices = QueueFamilyIndices::default();
 
     // Retrieve a list of queue families for a physical device
@@ -318,6 +332,13 @@ unsafe fn find_queue_families(instance: &ash::Instance, physical_device: vk::Phy
             indices.graphics_family = Some(current_family_index);
         }
 
+        // It is actually possible that the queue families supporting drawing commands and the ones supporting presentation do not overlap.
+        // There, we need to store distinct indices for drawing and presentation queues.
+        // Here, I query for presentation support.
+        if khr_extension.get_physical_device_surface_support(physical_device, current_family_index, surface).is_ok() {
+            indices.present_family = Some(current_family_index);
+        }
+
         if indices.is_complete() {
             break;
         }
@@ -328,7 +349,7 @@ unsafe fn find_queue_families(instance: &ash::Instance, physical_device: vk::Phy
     indices
 }
 
-unsafe fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
+unsafe fn is_device_suitable(instance: &ash::Instance, surface: vk::SurfaceKHR, khr_extension: &ash::extensions::khr::Surface, device: vk::PhysicalDevice) -> bool {
     let device_properties = instance.get_physical_device_properties(device);
     let device_features = instance.get_physical_device_features(device);
 
@@ -337,7 +358,8 @@ unsafe fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevic
 
     // Currently, I just select any physical GPU that supports geometry shaders.
     let selection_criteria = 
-        (device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0) && (find_queue_families(instance, device).is_complete());
+        (device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0) 
+        && (find_queue_families(instance, surface, khr_extension, device).is_complete());
 
     if selection_criteria {
         println!("Selected physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
