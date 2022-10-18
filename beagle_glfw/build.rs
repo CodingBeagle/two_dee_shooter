@@ -22,6 +22,12 @@ fn main() {
 
     // bindgen::Builder is the main entry point to bindgen, and lets you build up options for the resulting bindings.
     let bindings = bindgen::Builder::default()
+        // I blocklist VkSurfaceKHR types, and the VkInstance type.
+        // These types are what is known as "Non-dispatchable" handle types, and are 64-bit integer types.
+        // They were, for some reason, not properly handled by bindgen.
+        // They are generated as opaque pointer types, which is not needed.
+        .blocklist_type("VkSurfaceKHR.*")
+        .blocklist_type("VkInstance")
         // I'm currently using the dynamic library (.dll) for GLFW
         // When using that, it is required to define the GLFW_DLL macro, to tell the compiler that the GLFW functions are defined in a DLL.
         .clang_arg("-D GLFW_DLL")

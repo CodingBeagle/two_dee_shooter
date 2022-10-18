@@ -7,4 +7,4 @@ edition = "2021"
 
 # build-dependencies are used for dependencies needed during the build process, for build scripts (build.rs).
 [build-dependencies]
-bindgen = "0.53.1"
+bindgen = "0.61.0"
