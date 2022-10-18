@@ -288,6 +288,23 @@ fn main() {
     }
 }
 
+#[derive(Default)]
+struct SwapChainSupportDetails {
+    capabilities: vk::SurfaceCapabilitiesKHR,
+    formats: Vec<vk::SurfaceFormatKHR>,
+    presentModes: Vec<vk::PresentModeKHR>
+}
+
+unsafe fn query_swapchain_support(surface_extensions: ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice) -> SwapChainSupportDetails {
+    let swapchain_support_details = SwapChainSupportDetails {
+        capabilities: surface_extensions.get_physical_device_surface_capabilities(device, surface).unwrap(),
+        formats: surface_extensions.get_physical_device_surface_formats(device, surface).unwrap(),
+        presentModes: surface_extensions.get_physical_device_surface_present_modes(device, surface).unwrap()
+    };
+
+    swapchain_support_details
+}
+
 fn strings_to_cstrings(strings: Vec<String>) -> Vec<CString> {
     let wut: Vec<CString> = strings
         .iter()
