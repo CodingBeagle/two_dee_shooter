@@ -288,6 +288,74 @@ fn main() {
     }
 }
 
+// VkSurfaceFormatKHR contains two properties:
+// - format
+// - colorSpace
+// Format describes the color channels and types.
+// colorSpace indicates if the SRGB color space is supported or not.
+// Right now, I will always prefer the format B8G8R8A8_SRGB with SRGB colorspace.
+fn choose_swap_surface_format(available_formats: Vec<vk::SurfaceFormatKHR>) -> vk::SurfaceFormatKHR {
+    for surface_format in &available_formats {
+        if surface_format.format == vk::Format::B8G8R8A8_SRGB && surface_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR {
+            println!("Picked preferred format and colorspace: B8G8R8A8_SRGB & SRGB");
+            return *surface_format;
+        }
+    }
+
+    // In case the preferred case isn't available, we'll pick whatever is the first available format.
+    *available_formats.first().unwrap()
+}
+
+fn choose_swap_present_mode(available_present_modes: Vec<vk::PresentModeKHR>) -> vk::PresentModeKHR {
+    for present_mode in &available_present_modes {
+        // Currently prefer the MAILBOX present mode (similar to triple buffering)
+        if *present_mode == vk::PresentModeKHR::MAILBOX {
+            return *present_mode;
+        }
+    }
+
+    // If triple buffering isn't available we will prefer FIFO.
+    // This presentation mode is the only one guarenteed to be available.
+    vk::PresentModeKHR::FIFO
+}
+
+// The swap extent is the resolution of the swap chain images.
+// It's almost always equal to the resolution of the window that we're drawing to
+// IN PIXELS.
+// The range of possible resolutions is defined in the vk::SurfaceCapabilitiesKHR structure.
+unsafe fn choose_swap_extent(window: *mut GLFWwindow, capabilities: vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+    // If the width or height is not the maximum allowed value of u32,
+    // This means that Vulkan has matched the resolution of the window
+    // Otherwise, we need to pick the resolution that best matches the window within
+    // the bounds of "minImageExtent" and "maxImageExtent", which is the range of
+    // possible resolutions as determined by Vulkan.
+    if capabilities.current_extent.width != u32::MAX {
+        return capabilities.current_extent;
+    } else {
+        let mut width: i32 = 0;
+        let mut height: i32 = 0;
+
+        glfwGetFramebufferSize(window, &mut width, &mut height);
+
+        let actual_extent = vk::Extent2D {
+            width: clamp(width as u32, capabilities.min_image_extent.width, capabilities.max_image_extent.width),
+            height: clamp(height as u32, capabilities.min_image_extent.height, capabilities.max_image_extent.height),
+        };
+
+        actual_extent
+    }
+}
+
+fn clamp(value: u32, min: u32, max: u32) -> u32 {
+    if value < min {
+        return min;
+    } else if value > max {
+        return max;
+    }
+
+    value
+}
+
 #[derive(Default)]
 struct SwapChainSupportDetails {
     capabilities: vk::SurfaceCapabilitiesKHR,
@@ -295,7 +363,7 @@ struct SwapChainSupportDetails {
     presentModes: Vec<vk::PresentModeKHR>
 }
 
-unsafe fn query_swapchain_support(surface_extensions: ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice) -> SwapChainSupportDetails {
+unsafe fn query_swapchain_support(surface_extensions: &ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice) -> SwapChainSupportDetails {
     let swapchain_support_details = SwapChainSupportDetails {
         capabilities: surface_extensions.get_physical_device_surface_capabilities(device, surface).unwrap(),
         formats: surface_extensions.get_physical_device_surface_formats(device, surface).unwrap(),
@@ -372,14 +440,22 @@ unsafe fn is_device_suitable(instance: &ash::Instance, surface: vk::SurfaceKHR, 
     let device_properties = instance.get_physical_device_properties(device);
     let device_features = instance.get_physical_device_features(device);
 
+    let extensions_supported = check_device_extension_support(instance, device);
+
+    let mut swapchain_adequate = false;
+    if extensions_supported {
+        let swapchain_details = query_swapchain_support(&khr_extension, surface, device);
+        swapchain_adequate = !swapchain_details.formats.is_empty() && !swapchain_details.presentModes.is_empty();
+    }
+
     let device_name = CStr::from_ptr(device_properties.device_name.as_ptr());
     println!("Checking physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
-
-    // Currently, I just select any physical GPU that supports geometry shaders.
+    
     let selection_criteria = 
         (device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU && device_features.geometry_shader > 0) 
         && (find_queue_families(instance, surface, khr_extension, device).is_complete())
-        && check_device_extension_support(instance, device);
+        && extensions_supported
+        && swapchain_adequate;
 
     if selection_criteria {
         println!("Selected physical device: {}", device_name.to_str().expect("Failed to convert CStr to string!"));
