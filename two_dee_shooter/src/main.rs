@@ -2,47 +2,24 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::ffi::{ CString, CStr, c_void };
 use std::ptr;
-use std::os::raw::c_char;
 
 use ash::vk::{Handle, DeviceQueueCreateFlags};
 use ash::{vk, Entry};
 
 use beagle_glfw::*;
 
+#[macro_use]
+extern crate lazy_static;
+
 static WIDTH: i32 = 800;
 static HEIGHT: i32 = 600;
 
-// Callback function used by Debug Utils extension.
-// TODO: What does extern "system" mean?
-unsafe extern "system" fn vulkan_debug_utils_callback(
-    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    p_user_data: *mut c_void) -> vk::Bool32 {
-
-        let severity = match message_severity {
-            vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "[Verbose]",
-            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "[Warning]",
-            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "[ERROR]",
-            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "[INFO]",
-            _ => "[Unknown]"
-        };
-
-        let types = match message_type {
-            vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-            vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-            vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
-            _ => "[Unknown]"
-        };
-
-        let message = CStr::from_ptr((*p_callback_data).p_message);
-
-        println!("[Debug]{}{}{:?}", severity, types, message);
-
-        // The callback returns a boolean that indicates if the Vulkan call that triggered the validation layer message should
-        // be aborted. If the callback returns true, the call is aborted.
-        // This is normally used used to test the validation layers themselves, so you should always return VK_FALSE.
-        vk::FALSE
+lazy_static! {
+    static ref REQUIRED_EXTENSIONS: HashSet<String> = {
+        let mut m = HashSet::new();
+        m.insert(String::from("VK_KHR_swapchain"));
+        m
+    };
 }
 
 fn main() {
@@ -253,6 +230,11 @@ fn main() {
             ..Default::default()
         };
 
+        // Required device extensions
+        let required_device_extensions: Vec<String> = REQUIRED_EXTENSIONS.clone().into_iter().collect();
+        let required_device_extensions_cstrings = strings_to_cstrings(required_device_extensions);
+        let required_device_extensions_raw_pointers = strings_to_raw_pointers(&required_device_extensions_cstrings);
+
         // Now I create the logical device
         // Qeues will be created automatically with the logical device.
         let logical_device_create_info = vk::DeviceCreateInfo {
@@ -265,13 +247,15 @@ fn main() {
             // However, it's a good idea to set the anyways to be compatible with older implementations.
             enabled_layer_count: required_validation_layers.len() as u32,
             pp_enabled_layer_names: validation_layers_as_raw_pointers.as_ptr(),
+            enabled_extension_count: required_device_extensions_raw_pointers.len() as u32,
+            pp_enabled_extension_names: required_device_extensions_raw_pointers.as_ptr(),
             ..Default::default()
         };
 
         let vk_device = 
             match vk_instance.create_device(selected_physical_device.unwrap(), &logical_device_create_info, None) {
                 Ok(physical_device) => physical_device,
-                Err(err) => panic!("Failed to create physical device! :(")
+                Err(err) => panic!("Failed to create physical device: {}", err)
             };
 
         // Now that we have a logical device, we can retrieve the queue we need.
@@ -302,6 +286,24 @@ fn main() {
         // If you don't global system settings changed by GLFW might not be restored properly.
         glfwTerminate();
     }
+}
+
+fn strings_to_cstrings(strings: Vec<String>) -> Vec<CString> {
+    let wut: Vec<CString> = strings
+        .iter()
+        .map(|string| {
+            CString::new(string.clone()).unwrap()
+        })
+        .collect();
+
+    wut
+}
+
+unsafe fn strings_to_raw_pointers(strings: &Vec<CString>) -> Vec<*const i8> {
+    strings
+        .iter()
+        .map(|string| string.as_ptr())
+        .collect()
 }
 
 #[derive(Default)]
@@ -376,8 +378,7 @@ unsafe fn check_device_extension_support(instance: &ash::Instance, physical_devi
     // So, we need to query our device for support for this extension.
     let available_device_extensions = instance.enumerate_device_extension_properties(physical_device).unwrap();
 
-    let mut required_extensions: HashSet<String> = HashSet::new();
-    required_extensions.insert(String::from("VK_KHR_swapchain"));
+    let mut required_extensions = REQUIRED_EXTENSIONS.clone();
 
     for available_extension in available_device_extensions {
         let extension_name = CStr::from_ptr(available_extension.extension_name.as_ptr()).to_str().unwrap();
@@ -447,4 +448,37 @@ unsafe fn get_latest_glfw_error_description() -> String {
     glfwGetError(&mut error_description_raw);
     let error_description = CString::from_raw(error_description_raw as *mut i8);
     error_description.into_string().expect("Failed to convert GLFW error description into String type")
+}
+
+// Callback function used by Debug Utils extension.
+// TODO: What does extern "system" mean?
+unsafe extern "system" fn vulkan_debug_utils_callback(
+    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
+    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+    p_user_data: *mut c_void) -> vk::Bool32 {
+
+        let severity = match message_severity {
+            vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "[Verbose]",
+            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "[Warning]",
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "[ERROR]",
+            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "[INFO]",
+            _ => "[Unknown]"
+        };
+
+        let types = match message_type {
+            vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
+            vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
+            vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
+            _ => "[Unknown]"
+        };
+
+        let message = CStr::from_ptr((*p_callback_data).p_message);
+
+        println!("[Debug]{}{}{:?}", severity, types, message);
+
+        // The callback returns a boolean that indicates if the Vulkan call that triggered the validation layer message should
+        // be aborted. If the callback returns true, the call is aborted.
+        // This is normally used used to test the validation layers themselves, so you should always return VK_FALSE.
+        vk::FALSE
 }
