@@ -266,11 +266,16 @@ fn main() {
         // Right now, we need the queue that supports presentation.
         let device_presentation_queue = VK_DEVICE.as_ref().unwrap().get_device_queue(indices.present_family.unwrap(), 0);
 
-        let swapchain = create_swap_chain(&surface_extension, the_surface, selected_physical_device.unwrap(), main_window);
+        let swapchain_extension = ash::extensions::khr::Swapchain::new(VK_INSTANCE.as_ref().unwrap(), VK_DEVICE.as_ref().unwrap());
+
+        let swapchain = create_swap_chain(&surface_extension, &swapchain_extension, the_surface, selected_physical_device.unwrap(), main_window);
 
         while glfwWindowShouldClose(main_window) == 0 {
             glfwPollEvents();
         }
+
+        // Delete the swapchain
+        swapchain_extension.destroy_swapchain(swapchain, None);
 
         // Delete the logical device
         VK_DEVICE.as_ref().unwrap().destroy_device(None);
@@ -294,7 +299,7 @@ fn main() {
     }
 }
 
-unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice, window: *mut GLFWwindow) -> vk::SwapchainKHR {
+unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, swapchain_extensions: &ash::extensions::khr::Swapchain, surface: vk::SurfaceKHR, device: vk::PhysicalDevice, window: *mut GLFWwindow) -> vk::SwapchainKHR {
     let swap_chain_support_details = query_swapchain_support(surface_extensions, surface, device);
 
     let surface_format = choose_swap_surface_format(swap_chain_support_details.formats);
@@ -338,9 +343,10 @@ unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, 
         ..Default::default()
     };
 
-    let swapchain_extension = ash::extensions::khr::Swapchain::new(VK_INSTANCE.as_ref().unwrap(), VK_DEVICE.as_ref().unwrap());
-
-    swapchain_extension.create_swapchain(&swap_chain_create_info, None).unwrap()
+    match swapchain_extensions.create_swapchain(&swap_chain_create_info, None) {
+        Ok(swapchain) => swapchain,
+        Err(e) => panic!("Failed to create swapchain: {}", e)
+    }
 }
 
 // VkSurfaceFormatKHR contains two properties:
