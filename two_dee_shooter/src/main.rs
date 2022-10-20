@@ -266,6 +266,8 @@ fn main() {
         // Right now, we need the queue that supports presentation.
         let device_presentation_queue = VK_DEVICE.as_ref().unwrap().get_device_queue(indices.present_family.unwrap(), 0);
 
+        let swapchain = create_swap_chain(&surface_extension, the_surface, selected_physical_device.unwrap(), main_window);
+
         while glfwWindowShouldClose(main_window) == 0 {
             glfwPollEvents();
         }
@@ -292,7 +294,7 @@ fn main() {
     }
 }
 
-unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice, window: *mut GLFWwindow) {
+unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice, window: *mut GLFWwindow) -> vk::SwapchainKHR {
     let swap_chain_support_details = query_swapchain_support(surface_extensions, surface, device);
 
     let surface_format = choose_swap_surface_format(swap_chain_support_details.formats);
@@ -336,7 +338,9 @@ unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, 
         ..Default::default()
     };
 
-    let swapchain = ash::extensions::khr::Swapchain::new(VK_INSTANCE.as_ref().unwrap(), VK_DEVICE.as_ref().unwrap());
+    let swapchain_extension = ash::extensions::khr::Swapchain::new(VK_INSTANCE.as_ref().unwrap(), VK_DEVICE.as_ref().unwrap());
+
+    swapchain_extension.create_swapchain(&swap_chain_create_info, None).unwrap()
 }
 
 // VkSurfaceFormatKHR contains two properties:
