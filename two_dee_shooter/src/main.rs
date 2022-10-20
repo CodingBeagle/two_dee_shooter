@@ -22,6 +22,10 @@ lazy_static! {
     };
 }
 
+static mut VK_ENTRY: Option<ash::Entry> = None;
+static mut VK_INSTANCE: Option<ash::Instance> = None;
+static mut VK_DEVICE: Option<ash::Device> = None;
+
 fn main() {
     unsafe {
         if glfwInit() == 0 {
@@ -31,7 +35,7 @@ fn main() {
         // Vulkan Ash related initialization
         // TODO: Read up more on this Entry::Linked called. It seems to load the Vulkan library by linking to it statically.
         // But how does this work, and what exactly does it do???
-        let entry = Entry::linked();
+        VK_ENTRY = Some(Entry::linked());
 
         /*
             In order to initialize Vulkan, we need to create an instance.
@@ -69,7 +73,7 @@ fn main() {
 
         // Retrieve all available layers.
         // TODO: Probably I could transform available_layers to a list of strings to quickly compare against my required validation layers
-        let available_layers = entry.enumerate_instance_layer_properties().expect("Failed to retrieve available layers.");
+        let available_layers = VK_ENTRY.as_ref().unwrap().enumerate_instance_layer_properties().expect("Failed to retrieve available layers.");
 
         for required_validation_layer in &required_validation_layers {
             let mut is_required_validation_layer_supported = false;
@@ -128,16 +132,16 @@ fn main() {
         // This instance should live for as long as the application lives.
         // Creating a VkInstance object initializes the Vulkan library.
         // Per-application state is stored in this object. Vulkan does NOT have any global state.
-        let mut vk_instance = entry.create_instance(&create_info, None).expect("Failed to create Vulkan instance.");
+        VK_INSTANCE = Some(VK_ENTRY.as_ref().unwrap().create_instance(&create_info, None).expect("Failed to create Vulkan instance."));
 
         // In order to create a debug messenger, we have to call the function "vkCreateDebugUtilsMessengerEXT"
         // Since this is an extension function, it is not automatically loaded with Vulkan.
         // We have to load it ourselves
-        let debug_utils_loader = ash::extensions::ext::DebugUtils::new(&entry, &vk_instance);
+        let debug_utils_loader = ash::extensions::ext::DebugUtils::new(VK_ENTRY.as_ref().unwrap(), VK_INSTANCE.as_ref().unwrap());
         let debug_utils_messenger = setup_debug_messenger(&debug_utils_loader);
 
         // After creating a Vulkan instance, we need to select a physical graphics card that supports the features we need.
-        let physical_devices = vk_instance.enumerate_physical_devices().expect("Failed to retrieve physical devices.");
+        let physical_devices = VK_INSTANCE.as_ref().unwrap().enumerate_physical_devices().expect("Failed to retrieve physical devices.");
 
         // GLFW was originally designed to create an OpenGL context, so we have to tell it not to
         // since we'll be using Vulkan.
@@ -165,14 +169,14 @@ fn main() {
         // While the object and its usage is platform agnostic, the creation isn't.
         // The creation depends on window system details, like a HWND and HMODULE.
         // There is a platform-specific addition to "VK_KHR_SURFACE" called "VK_KHR_win32_surface" that handles this.
-        let surface_extension = ash::extensions::khr::Surface::new(&entry, &vk_instance);
+        let surface_extension = ash::extensions::khr::Surface::new(VK_ENTRY.as_ref().unwrap(), VK_INSTANCE.as_ref().unwrap());
 
         let mut some_surface: u64 = 0;
 
         // TODO: I manually edited the bindings.rs file to simply have u64 handles for parameters. The bindgen generation is bonkers.
         // I'll have to figure out how to make that generation automatic, by modifying the types through the bindgen builder.
         // Perhaps I should also raise an issue on bindgen github?
-        let result = glfwCreateWindowSurface(vk_instance.handle().as_raw(), main_window, ptr::null(), &mut some_surface);
+        let result = glfwCreateWindowSurface(VK_INSTANCE.as_ref().unwrap().handle().as_raw(), main_window, ptr::null(), &mut some_surface);
 
         if result != 0 {
             panic!("Failed to create Window Surface!");
@@ -183,7 +187,7 @@ fn main() {
         // TODO: Do something nice here, like printing a list of all available physical devices.
         let mut selected_physical_device: Option<vk::PhysicalDevice> = None;
         for physical_device in physical_devices {
-            if is_device_suitable(&vk_instance, the_surface, &surface_extension, physical_device) {
+            if is_device_suitable(VK_INSTANCE.as_ref().unwrap(), the_surface, &surface_extension, physical_device) {
                 selected_physical_device = Some(physical_device);
             }
         }
@@ -196,7 +200,7 @@ fn main() {
 
         // In order to create a logical device, I need to supply information on queues I want to have created, as well as
         // Device features I want to use.
-        let indices = find_queue_families(&vk_instance, the_surface, &surface_extension, selected_physical_device.unwrap());
+        let indices = find_queue_families(VK_INSTANCE.as_ref().unwrap(), the_surface, &surface_extension, selected_physical_device.unwrap());
 
         let mut family_indices: HashSet<u32> = HashSet::new();
         family_indices.insert(indices.graphics_family.unwrap());
@@ -252,22 +256,22 @@ fn main() {
             ..Default::default()
         };
 
-        let vk_device = 
-            match vk_instance.create_device(selected_physical_device.unwrap(), &logical_device_create_info, None) {
+        VK_DEVICE = Some( 
+            match VK_INSTANCE.as_ref().unwrap().create_device(selected_physical_device.unwrap(), &logical_device_create_info, None) {
                 Ok(physical_device) => physical_device,
                 Err(err) => panic!("Failed to create physical device: {}", err)
-            };
+            });
 
         // Now that we have a logical device, we can retrieve the queue we need.
         // Right now, we need the queue that supports presentation.
-        let device_presentation_queue = vk_device.get_device_queue(indices.present_family.unwrap(), 0);
+        let device_presentation_queue = VK_DEVICE.as_ref().unwrap().get_device_queue(indices.present_family.unwrap(), 0);
 
         while glfwWindowShouldClose(main_window) == 0 {
             glfwPollEvents();
         }
 
         // Delete the logical device
-        vk_device.destroy_device(None);
+        VK_DEVICE.as_ref().unwrap().destroy_device(None);
 
         // Clean up the debug messenger
         // Destroying the debug messenger must be done before the Vulkan instance is destroyed.
@@ -278,7 +282,7 @@ fn main() {
         surface_extension.destroy_surface(the_surface, None);
 
         // Before we terminate the application, we destroy the Vulkan instance.
-        vk_instance.destroy_instance(None);
+        VK_INSTANCE.as_ref().unwrap().destroy_instance(None);
 
         glfwDestroyWindow(main_window);
 
@@ -286,6 +290,53 @@ fn main() {
         // If you don't global system settings changed by GLFW might not be restored properly.
         glfwTerminate();
     }
+}
+
+unsafe fn create_swap_chain(surface_extensions: &ash::extensions::khr::Surface, surface: vk::SurfaceKHR, device: vk::PhysicalDevice, window: *mut GLFWwindow) {
+    let swap_chain_support_details = query_swapchain_support(surface_extensions, surface, device);
+
+    let surface_format = choose_swap_surface_format(swap_chain_support_details.formats);
+    let present_mode = choose_swap_present_mode(swap_chain_support_details.presentModes);
+    let extent = choose_swap_extent(window, swap_chain_support_details.capabilities);
+
+    // We need to decide how many images we would like to have in the swap chain.
+    // capabilities.min_image_count specifies the minimum number of images the implementation requires to function.
+    // However, it is recommended to request at least one more image than the minimum, in order to avoid having to wait for the driver to complete
+    // internal operations before we can aquire another image to render to.
+    let mut image_count = swap_chain_support_details.capabilities.min_image_count + 1;
+
+    // However, we still need to make sure that we do not exceed the maximum supported image count.
+    if swap_chain_support_details.capabilities.max_image_count > 0 && image_count > swap_chain_support_details.capabilities.max_image_count {
+        image_count = swap_chain_support_details.capabilities.max_image_count;
+    }
+
+    // The "image_array_layers" property specifies the amount of layers each image consists of.
+    // This is always "1", unless you are developing a stereoscopic 3D application.
+    // The "image_usage" property specificies what operations we'll use the images in the swap chain for.
+    // "COLOR_ATTACHMENT" means we render to them directly.
+    // "pre_transform" can be used to specify certain transforms that should be applied to images in the swap chain.
+    // To specify that you do not want any transformation, simply specify the current transformation.
+    // "composite_alpha" can be used to specify if the alpha channel should be used for blending with other windows in the window system.
+    // You'll almost always want to simply ignore the alpha channel, which is "vk::CompositeAlphaFlagsKHR::OPAQUE".
+    // TODO: Read up on "old_swapchain", complex topic regarding recreation of swap_chains in events such as resizing of window.
+    let swap_chain_create_info = vk::SwapchainCreateInfoKHR {
+        s_type: vk::StructureType::SWAPCHAIN_CREATE_INFO_KHR,
+        surface: surface,
+        min_image_count: image_count,
+        image_format: surface_format.format,
+        image_color_space: surface_format.color_space,
+        image_extent: extent,
+        image_array_layers: 1,
+        image_usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+        pre_transform: swap_chain_support_details.capabilities.current_transform,
+        composite_alpha: vk::CompositeAlphaFlagsKHR::OPAQUE,
+        present_mode: present_mode,
+        clipped: vk::TRUE,
+        old_swapchain: vk::SwapchainKHR::null(),
+        ..Default::default()
+    };
+
+    let swapchain = ash::extensions::khr::Swapchain::new(VK_INSTANCE.as_ref().unwrap(), VK_DEVICE.as_ref().unwrap());
 }
 
 // VkSurfaceFormatKHR contains two properties:
